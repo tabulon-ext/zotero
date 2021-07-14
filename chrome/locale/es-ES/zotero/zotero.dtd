@@ -176,7 +176,7 @@
 <!ENTITY zotero.tagColorChooser.setColor "Establecer color">
 <!ENTITY zotero.tagColorChooser.removeColor "Borrar color">
 
-<!ENTITY zotero.lookup.description "Introduzca los ISBNs, DOIs, PMIDs o arXiv IDs a añadir a su biblioteca:">
+<!ENTITY zotero.lookup.description "Introduzca los ISBN, DOI, PMID o arXiv ID a añadir a su biblioteca:">
 <!ENTITY zotero.lookup.button.search "Buscar">
 
 <!ENTITY zotero.createParent.title "Crear elemento contenedor">
@@ -335,3 +335,17 @@
 <!ENTITY zotero.context.addStandaloneNote "Añadir nota independiente">
 <!ENTITY zotero.context.addStandaloneNoteFromAnnotations "Añadir nota independiente a partir de las anotaciones">
 <!ENTITY zotero.context.editInWindow "Editar en una ventana aparte">
+
+<!ENTITY zotero.pdfReader.firstPage "Primera página">
+<!ENTITY zotero.pdfReader.lastPage "Última página">
+<!ENTITY zotero.pdfReader.back "Atrás">
+<!ENTITY zotero.pdfReader.forward "Adelante">
+<!ENTITY zotero.pdfReader.rotateClockwise "Girar en sentido horario">
+<!ENTITY zotero.pdfReader.rotateCounterclockwise "Girar en sentido antihorario">
+<!ENTITY zotero.pdfReader.handTool "Herramienta de mano">
+<!ENTITY zotero.pdfReader.verticalScrolling "Desplazamiento vertical">
+<!ENTITY zotero.pdfReader.horizontalScrolling "Desplazamiento horizontal">
+<!ENTITY zotero.pdfReader.wrappedScrolling "Desplazamiento en bloque">
+<!ENTITY zotero.pdfReader.noSpreads "Vista de libro">
+<!ENTITY zotero.pdfReader.oddSpreads "Vista de libro impar">
+<!ENTITY zotero.pdfReader.evenSpreads "Vista de libro par">

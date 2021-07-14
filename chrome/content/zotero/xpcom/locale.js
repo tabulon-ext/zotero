@@ -1,6 +1,8 @@
 Zotero.Locale = {
 	/**
-	 * Keep this up to date with chrome.manifest
+	 * Keep this up to date with chrome.manifest and zotero-build/dictionaries/build-dictionaries
+	 *
+	 * Names from https://addons.mozilla.org/en-US/firefox/language-tools/
 	 */
 	availableLocales: Object.freeze({
 		'ar': 'عربي',
@@ -15,6 +17,7 @@ Zotero.Locale = {
 		'en-GB': 'English (UK)',
 		'es-ES': 'Español',
 		'et-EE': 'Eesti keel',
+		'eu-ES': 'Euskara',
 		'fa': 'فارسی',
 		'fi-FI': 'suomi',
 		'fr-FR': 'Français',

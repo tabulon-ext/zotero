@@ -6,7 +6,7 @@
 <!ENTITY zotero.general.deselectAll "Kijelölés megszüntetése">
 <!ENTITY zotero.general.edit "Szerkesztés">
 <!ENTITY zotero.general.delete "Törlés">
-<!ENTITY zotero.general.moveToTrash "Move to Trash">
+<!ENTITY zotero.general.moveToTrash "Mozgatás a Kukába">
 <!ENTITY zotero.general.ok "OK">
 <!ENTITY zotero.general.cancel "Mégse">
 <!ENTITY zotero.general.refresh "Újratöltés">
@@ -91,7 +91,7 @@
 
 <!ENTITY zotero.items.menu.showInLibrary "Megjelenítés a könyvtárban">
 <!ENTITY zotero.items.menu.attach.note "Jegyzet hozzáadása">
-<!ENTITY zotero.items.menu.attach.noteFromAnnotations "Add Note from Annotations">
+<!ENTITY zotero.items.menu.attach.noteFromAnnotations "Megjegyzés hozzáadása a kommentárokból">
 <!ENTITY zotero.items.menu.attach "Csatolmány hozzáadása">
 <!ENTITY zotero.items.menu.attach.link.uri "Link csatolása az URI-hez…">
 <!ENTITY zotero.items.menu.attach.file "Helyben tárolt példány csatolása">
@@ -157,8 +157,8 @@
 <!ENTITY zotero.toolbar.attachment.add "Helyi másolat tárolása...">
 <!ENTITY zotero.toolbar.attachment.weblink "Hivatkozás az aktuális oldalra">
 <!ENTITY zotero.toolbar.attachment.snapshot "Pillanatfelvétel az aktuális oldalról">
-<!ENTITY zotero.toolbar.context.item "Item">
-<!ENTITY zotero.toolbar.context.notes "Notes">
+<!ENTITY zotero.toolbar.context.item "Elem">
+<!ENTITY zotero.toolbar.context.notes "Jegyzetek">
 
 <!ENTITY zotero.tagSelector.noTagsToDisplay "Nincsenek címkék">
 <!ENTITY zotero.tagSelector.loadingTags "Címkék betöltése…">
@@ -330,8 +330,22 @@
 <!ENTITY zotero.attachLink.label.link "Link:">
 <!ENTITY zotero.attachLink.label.title "Cím:">
 
-<!ENTITY zotero.context.addChildNote "Add Item Note">
+<!ENTITY zotero.context.addChildNote "Elem jegyzetének hozzáadása">
 <!ENTITY zotero.context.addChildNoteFromAnnotations "Add Item Note from Annotations">
 <!ENTITY zotero.context.addStandaloneNote "Add Standalone Note">
 <!ENTITY zotero.context.addStandaloneNoteFromAnnotations "Add Standalone Note from Annotations">
-<!ENTITY zotero.context.editInWindow "Edit in a Separate Window">
+<!ENTITY zotero.context.editInWindow "Szerkesztés külön ablakban">
+
+<!ENTITY zotero.pdfReader.firstPage "Első oldal">
+<!ENTITY zotero.pdfReader.lastPage "Utolsó oldal">
+<!ENTITY zotero.pdfReader.back "Vissza">
+<!ENTITY zotero.pdfReader.forward "Előre">
+<!ENTITY zotero.pdfReader.rotateClockwise "Forgatás az óramutató járásával megegyező irányba">
+<!ENTITY zotero.pdfReader.rotateCounterclockwise "Forgatás az óramutató járásával ellentétes irányba">
+<!ENTITY zotero.pdfReader.handTool "Hand Tool">
+<!ENTITY zotero.pdfReader.verticalScrolling "Függőleges görgetés">
+<!ENTITY zotero.pdfReader.horizontalScrolling "Vízszintes görgetés">
+<!ENTITY zotero.pdfReader.wrappedScrolling "Wrapped Scrolling">
+<!ENTITY zotero.pdfReader.noSpreads "No Spreads">
+<!ENTITY zotero.pdfReader.oddSpreads "Odd Spreads">
+<!ENTITY zotero.pdfReader.evenSpreads "Even Spreads">

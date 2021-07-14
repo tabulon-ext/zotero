@@ -23,6 +23,8 @@
     ***** END LICENSE BLOCK *****
 */
 
+Components.utils.import("resource://gre/modules/InlineSpellChecker.jsm");
+
 // Note: TinyMCE is automatically doing some meaningless corrections to
 // note-editor produced HTML. Which might result to more
 // conflicts, especially in group libraries
@@ -42,7 +44,7 @@ const DOWNLOADED_IMAGE_TYPE = [
 ];
 
 // Schema version here has to be the same as in note-editor!
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 class EditorInstance {
 	constructor() {
@@ -55,7 +57,7 @@ class EditorInstance {
 		// TODO: Consider to use only itemID instead of loaded item
 		this._item = options.item;
 		this._viewMode = options.viewMode;
-		this._readOnly = options.readOnly;
+		this._readOnly = options.readOnly || this._isReadOnly();
 		this._disableUI = options.disableUI;
 		this._onReturn = options.onReturn;
 		this._iframeWindow = options.iframeWindow;
@@ -67,9 +69,14 @@ class EditorInstance {
 		this._quickFormatWindow = null;
 		this._isAttachment = this._item.isAttachment();
 		this._citationItemsList = [];
+		this._initPromise = new Promise((resolve, reject) => {
+			this._resolveInitPromise = resolve;
+			this._rejectInitPromise = reject;
+		});
 		this._prefObserverIDs = [
 			Zotero.Prefs.registerObserver('note.fontSize', this._handleFontChange),
-			Zotero.Prefs.registerObserver('note.fontFamily', this._handleFontChange)
+			Zotero.Prefs.registerObserver('note.fontFamily', this._handleFontChange),
+			Zotero.Prefs.registerObserver('layout.spellcheckDefault', this._handleSpellCheckChange, true)
 		];
 		
 		// Run Cut/Copy/Paste with chrome privileges
@@ -100,7 +107,13 @@ class EditorInstance {
 			dir: Zotero.dir,
 			font: this._getFont(),
 			hasBackup: note && !Zotero.Notes.hasSchemaVersion(note)
-				|| !!await Zotero.NoteBackups.getNote(this._item.id)
+				|| !!await Zotero.NoteBackups.getNote(this._item.id),
+			localizedStrings: {
+				// Figure out a better way to pass this
+				'zotero.appName': Zotero.appName,
+				...Zotero.Intl.getPrefixedStrings('general.'),
+				...Zotero.Intl.getPrefixedStrings('noteEditor.')
+			}
 		});
 	}
 
@@ -186,6 +199,13 @@ class EditorInstance {
 		this._iframeWindow.postMessage({ instanceID: this.instanceID, message }, '*');
 	}
 
+	_isReadOnly() {
+		let item = this._item;
+		return !item.isEditable()
+			|| item.deleted
+			|| item.parentItem && item.parentItem.deleted;
+	}
+
 	_getFont() {
 		let fontSize = Zotero.Prefs.get('note.fontSize');
 		// Fix empty old font prefs before a value was enforced
@@ -199,6 +219,20 @@ class EditorInstance {
 	_handleFontChange = () => {
 		this._postMessage({ action: 'updateFont', font: this._getFont() });
 	}
+
+	_handleSpellCheckChange = () => {
+		try {
+			let spellChecker = this._getSpellChecker();
+			let value = Zotero.Prefs.get('layout.spellcheckDefault', true);
+			if (!value && spellChecker.enabled
+				|| value && !spellChecker.enabled) {
+				spellChecker.toggleEnabled();
+			}
+		}
+		catch (e) {
+			Zotero.logError(e);
+		}
+	}
 	
 	_showInLibrary(ids) {
 		if (!Array.isArray(ids)) {
@@ -210,6 +244,74 @@ class EditorInstance {
 			win.Zotero_Tabs.select('zotero-pane');
 			win.focus();
 		}
+	}
+
+	/**
+	 * Transform plain text, containing some supported HTML tags, into actual HTML.
+	 * A similar code is also used in pdf-reader mini editor for annotation text and comments.
+	 * It basically creates a text node and then parses and wraps specific parts
+	 * of it into supported HTML tags
+	 *
+	 * @param text Plain text flavored with some HTML tags
+	 * @returns {string} HTML
+	 * @private
+	 */
+	_transformTextToHTML(text) {
+		const supportedFormats = ['i', 'b', 'sub', 'sup'];
+
+		function getFormatter(str) {
+			let results = supportedFormats.map(format => str.toLowerCase().indexOf('<' + format + '>'));
+			results = results.map((offset, idx) => [supportedFormats[idx], offset]);
+			results.sort((a, b) => a[1] - b[1]);
+			for (let result of results) {
+				let format = result[0];
+				let offset = result[1];
+				if (offset < 0) continue;
+				let lastIndex = str.toLowerCase().indexOf('</' + format + '>', offset);
+				if (lastIndex >= 0) {
+					let parts = [];
+					parts.push(str.slice(0, offset));
+					parts.push(str.slice(offset + format.length + 2, lastIndex));
+					parts.push(str.slice(lastIndex + format.length + 3));
+					return {
+						format,
+						parts
+					};
+				}
+			}
+			return null;
+		}
+
+		function walkFormat(parent) {
+			let child = parent.firstChild;
+			while (child) {
+				if (child.nodeType === 3) {
+					let text = child.nodeValue;
+					let formatter = getFormatter(text);
+					if (formatter) {
+						let nodes = [];
+						nodes.push(doc.createTextNode(formatter.parts[0]));
+						let midNode = doc.createElement(formatter.format);
+						midNode.appendChild(doc.createTextNode(formatter.parts[1]));
+						nodes.push(midNode);
+						nodes.push(doc.createTextNode(formatter.parts[2]));
+						child.replaceWith(...nodes);
+						child = midNode;
+					}
+				}
+				walkFormat(child);
+				child = child.nextSibling;
+			}
+		}
+		
+		let parser = Components.classes['@mozilla.org/xmlextras/domparser;1']
+		.createInstance(Components.interfaces.nsIDOMParser);
+		let doc = parser.parseFromString('', 'text/html');
+		
+		// innerText transforms \n into <br>
+		doc.body.innerText = text;
+		walkFormat(doc.body);
+		return doc.body.innerHTML;
 	}
 	
 	/**
@@ -239,8 +341,6 @@ class EditorInstance {
 			
 			let storedAnnotation = {
 				uri: Zotero.URI.getItemURI(attachmentItem),
-				// trim() here is necessary because of already existing annotations
-				text: annotation.text ? annotation.text.trim() : annotation.text,
 				color: annotation.color,
 				pageLabel: annotation.pageLabel,
 				position: annotation.position
@@ -299,18 +399,23 @@ class EditorInstance {
 
 			// Text
 			if (annotation.text) {
-				highlightHTML = `<span class="highlight" data-annotation="${encodeURIComponent(JSON.stringify(storedAnnotation))}">“${annotation.text.trim()}”</span>`;
+				let text = this._transformTextToHTML(annotation.text.trim());
+				highlightHTML = `<span class="highlight" data-annotation="${encodeURIComponent(JSON.stringify(storedAnnotation))}">“${text}”</span>`;
 			}
 			
 			// Note
 			if (annotation.comment) {
-				commentHTML = ' ' + annotation.comment.trim();
+				let comment = this._transformTextToHTML(annotation.comment.trim());
+				// Move comment to the next line if it has multiple lines
+				commentHTML = (((highlightHTML || imageHTML || citationHTML) && comment.includes('<br')) ? '<br/>' : ' ') + comment;
+			}
+			
+			if (citationHTML) {
+				// Move citation to the next line if highlight has multiple lines or is after image
+				citationHTML = ((highlightHTML && highlightHTML.includes('<br') || imageHTML) ? '<br>' : '') + citationHTML;
 			}
 			
 			let otherHTML = [highlightHTML, citationHTML, commentHTML].filter(x => x).join(' ');
-			if (imageHTML && otherHTML) {
-				imageHTML += '<br/>';
-			}
 			html += '<p>' + imageHTML + otherHTML + '</p>\n';
 		}
 		return { html, citationItems: storedCitationItems };
@@ -436,6 +541,10 @@ class EditorInstance {
 		let message = e.data.message;
 		try {
 			switch (message.action) {
+				case 'initialized': {
+					this._resolveInitPromise();
+					return;
+				}
 				case 'insertObject': {
 					let { type, data, pos } = message;
 					if (this._readOnly) {
@@ -733,38 +842,145 @@ class EditorInstance {
 		return attachment.key;
 	}
 
-	_openPopup(x, y, pos, itemGroups) {
+	async _openPopup(x, y, pos, itemGroups) {
+		let appendItems = (parentNode, itemGroups) => {
+			for (let itemGroup of itemGroups) {
+				for (let item of itemGroup) {
+					if (item.groups) {
+						let menu = parentNode.ownerDocument.createElement('menu');
+						menu.setAttribute('label', item.label);
+						let menupopup = parentNode.ownerDocument.createElement('menupopup');
+						menu.append(menupopup);
+						appendItems(menupopup, item.groups);
+						parentNode.appendChild(menu);
+					}
+					else {
+						let menuitem = parentNode.ownerDocument.createElement('menuitem');
+						menuitem.setAttribute('value', item.name);
+						menuitem.setAttribute('label', item.label);
+						menuitem.setAttribute('disabled', !item.enabled);
+						menuitem.setAttribute('checked', item.checked);
+						menuitem.addEventListener('command', () => {
+							this._postMessage({
+								action: 'contextMenuAction',
+								ctxAction: item.name,
+								pos
+							});
+						});
+						parentNode.appendChild(menuitem);
+					}
+				}
+
+				if (itemGroups.indexOf(itemGroup) !== itemGroups.length - 1) {
+					let separator = parentNode.ownerDocument.createElement('menuseparator');
+					parentNode.appendChild(separator);
+				}
+			}
+		};
+		
 		this._popup.hidePopup();
 
 		while (this._popup.firstChild) {
 			this._popup.removeChild(this._popup.firstChild);
 		}
-
-		for (let itemGroup of itemGroups) {
-			for (let item of itemGroup) {
-				let menuitem = this._popup.ownerDocument.createElement('menuitem');
-				menuitem.setAttribute('value', item.name);
-				menuitem.setAttribute('label', item.label);
-				if (!item.enabled) {
-					menuitem.setAttribute('disabled', true);
+		
+		appendItems(this._popup, itemGroups);
+		
+		// Spell checker
+		let spellChecker = this._getSpellChecker();
+		
+		// If `contenteditable` area wasn't focused before, the spell checker
+		// might not be fully initialized on right-click.
+		// The wait time depends on system performance/load
+		let n = 0;
+		// Wait for 200ms
+		while (n++ < 20) {
+			try {
+				if (spellChecker.mInlineSpellChecker.spellChecker.GetCurrentDictionary()) {
+					break;
 				}
-				menuitem.addEventListener('command', () => {
-					this._postMessage({
-						action: 'contextMenuAction',
-						ctxAction: item.name,
-						pos
-					});
-				});
-				this._popup.appendChild(menuitem);
+			}
+			catch (e) {
+				break;
+			}
+			await Zotero.Promise.delay(10);
+		}
+		
+		// Separator
+		var separator = this._popup.ownerDocument.createElement('menuseparator');
+		this._popup.appendChild(separator);
+		// Check Spelling
+		var menuitem = this._popup.ownerDocument.createElement('menuitem');
+		menuitem.setAttribute('label', Zotero.getString('spellCheck.checkSpelling'));
+		menuitem.setAttribute('checked', spellChecker.enabled);
+		menuitem.addEventListener('command', () => {
+			// Possible values: 0 - off, 1 - only multi-line, 2 - multi and single line input boxes
+			Zotero.Prefs.set('layout.spellcheckDefault', spellChecker.enabled ? 0 : 1, true);
+		});
+		this._popup.append(menuitem);
+
+		if (spellChecker.enabled) {
+			// Languages menu
+			var menu = this._popup.ownerDocument.createElement('menu');
+			menu.setAttribute('label', Zotero.getString('general.languages'));
+			this._popup.append(menu);
+			// Languages menu popup
+			var menupopup = this._popup.ownerDocument.createElement('menupopup');
+			menu.append(menupopup);
+			
+			spellChecker.addDictionaryListToMenu(menupopup, null);
+			
+			// The menu is prepopulated with names from InlineSpellChecker::getDictionaryDisplayName(),
+			// which will be in English, so swap in native locale names where we have them
+			for (var menuitem of menupopup.children) {
+				// 'spell-check-dictionary-en-US'
+				let locale = menuitem.id.slice(23);
+				let label = Zotero.Dictionaries.getBestDictionaryName(locale);
+				if (label && label != locale) {
+					menuitem.setAttribute('label', label);
+				}
 			}
 			
-			if (itemGroups.indexOf(itemGroup) !== itemGroups.length - 1) {
+			// Separator
+			var separator = this._popup.ownerDocument.createElement('menuseparator');
+			menupopup.appendChild(separator);
+			// Add Dictionaries
+			var menuitem = this._popup.ownerDocument.createElement('menuitem');
+			menuitem.setAttribute('label', Zotero.getString('spellCheck.addRemoveDictionaries'));
+			menuitem.addEventListener('command', () => {
+				Services.ww.openWindow(null, "chrome://zotero/content/dictionaryManager.xul",
+					"dictionary-manager", "chrome,centerscreen", {});
+				
+			});
+			menupopup.append(menuitem);
+			
+			let selection = this._iframeWindow.getSelection();
+			if (selection) {
+				spellChecker.initFromEvent(
+					selection.anchorNode,
+					selection.anchorOffset
+				);
+			}
+
+			let firstElementChild = this._popup.firstElementChild;
+			let suggestionCount = spellChecker.addSuggestionsToMenu(this._popup, firstElementChild, 5);
+			if (suggestionCount) {
 				let separator = this._popup.ownerDocument.createElement('menuseparator');
-				this._popup.appendChild(separator);
+				this._popup.insertBefore(separator, firstElementChild);
 			}
 		}
-
+		
 		this._popup.openPopupAtScreen(x, y, true);
+	}
+
+	_getSpellChecker() {
+		let spellChecker = new InlineSpellChecker();
+		let editingSession = this._iframeWindow
+			.getInterface(Ci.nsIWebNavigation)
+			.QueryInterface(Ci.nsIInterfaceRequestor)
+			.getInterface(Ci.nsIEditingSession);
+		spellChecker.init(editingSession.getEditorForWindow(this._iframeWindow));
+		return spellChecker;
 	}
 
 	async _ensureNoteCreated() {
@@ -800,6 +1016,8 @@ class EditorInstance {
 						await this._item.save({
 							skipDateModifiedUpdate,
 							notifierData: {
+								// Use a longer timeout to avoid repeated syncing during typing
+								autoSyncDelay: Zotero.Notes.AUTO_SYNC_DELAY,
 								noteEditorID: this.instanceID,
 								state
 							}
@@ -818,7 +1036,11 @@ class EditorInstance {
 					item.parentKey = this.parentItem.key;
 				}
 				if (!this._disableSaving) {
-					var id = await item.saveTx();
+					var id = await item.saveTx({
+						notifierData: {
+							autoSyncDelay: Zotero.Notes.AUTO_SYNC_DELAY
+						}
+					});
 					if (!this.parentItem && this.collection) {
 						this.collection.addItem(id);
 					}
@@ -831,10 +1053,21 @@ class EditorInstance {
 			Zotero.crash(true);
 			throw e;
 		}
+		
+		// Reset spell checker as ProseMirror DOM modifications are
+		// often ignored otherwise
+		try {
+			let spellChecker = this._getSpellChecker();
+			spellChecker.toggleEnabled();
+			spellChecker.toggleEnabled();
+		} catch(e) {
+			Zotero.logError(e);
+		}
 	}
 
 	/**
 	 * Build citation item preview string (based on _buildBubbleString in quickFormat.js)
+	 * TODO: Try to avoid duplicating this code here and inside note-editor
 	 */
 	_formatCitationItemPreview(citationItem) {
 		const STARTSWITH_ROMANESQUE_REGEXP = /^[&a-zA-Z\u0e01-\u0e5b\u00c0-\u017f\u0370-\u03ff\u0400-\u052f\u0590-\u05d4\u05d6-\u05ff\u1f00-\u1fff\u0600-\u06ff\u200c\u200d\u200e\u0218\u0219\u021a\u021b\u202a-\u202e]/;
@@ -852,10 +1085,10 @@ class EditorInstance {
 			else if (authors.length === 2) {
 				let a = authors[0].family || authors[0].literal;
 				let b = authors[1].family || authors[1].literal;
-				str = a + ' and ' + b;
+				str = a + ' ' + Zotero.getString('general.and') + ' ' + b;
 			}
 			else if (authors.length >= 3) {
-				str = (authors[0].family || authors[0].literal) + ' et al.';
+				str = (authors[0].family || authors[0].literal) + ' ' + Zotero.getString('general.etAl');
 			}
 		}
 		
@@ -907,7 +1140,7 @@ class EditorInstance {
 	}
 
 	_formatCitation(citation) {
-		return citation.citationItems.map(x => this._formatCitationItemPreview(x)).join(';');
+		return citation.citationItems.map(x => this._formatCitationItemPreview(x)).join('; ');
 	}
 
 	_arrayBufferToBase64(buffer) {
@@ -1237,7 +1470,9 @@ class EditorInstance {
 			jsonAnnotation.attachmentItemID = attachmentItem.id;
 			jsonAnnotations.push(jsonAnnotation);
 		}
-		let html = `<h1>${Zotero.getString('note.annotationsWithDate', new Date().toLocaleString())}</h1>\n`;
+		let html = `<h1>${Zotero.getString('pdfReader.annotations')}<br/>`
+			+ Zotero.getString('noteEditor.annotationsDateLine', new Date().toLocaleString())
+			+ `</h1>\n`;
 		let { html: serializedHTML, citationItems } = await editorInstance._serializeAnnotations(jsonAnnotations, true);
 		html += serializedHTML;
 		citationItems = encodeURIComponent(JSON.stringify(citationItems));

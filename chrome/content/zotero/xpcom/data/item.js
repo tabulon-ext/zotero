@@ -1274,7 +1274,7 @@ Zotero.Item.prototype._saveData = Zotero.Promise.coroutine(function* (env) {
 	
 	// TEMP: Don't allow annotations or embedded images in group libraries
 	// TODO: Enable test in annotations.js after removing
-	if (libraryType != 'user') {
+	if (libraryType == 'group' && !Zotero.enablePDFBuildForGroups) {
 		if (this._changed.primaryData && this._changed.primaryData.itemTypeID
 				&& Zotero.ItemTypes.getName(itemTypeID) == 'annotation') {
 			throw new Error("Annotations can currently be created only in user libraries");
@@ -1873,7 +1873,7 @@ Zotero.Item.prototype._saveData = Zotero.Promise.coroutine(function* (env) {
 			}.bind(this));
 		}
 		
-		let fields = ['Type', 'Text', 'Comment', 'PageLabel', 'SortIndex', 'Position', 'IsExternal'];
+		let fields = ['Type', 'Text', 'Comment', 'Color', 'PageLabel', 'SortIndex', 'Position', 'IsExternal'];
 		for (let field of fields) {
 			this._clearChanged('annotation' + field);
 		}
@@ -3671,6 +3671,14 @@ for (let name of ['type', 'text', 'comment', 'color', 'pageLabel', 'sortIndex', 
 		set: function (value) {
 			this._requireData('annotation');
 			
+			// Normalize values
+			if (typeof value == 'string') {
+				value = value.trim().normalize();
+				if (value === "") {
+					value = null;
+				}
+			}
+			
 			if (this._getLatestField(field) === value) {
 				return;
 			}
@@ -3695,6 +3703,15 @@ for (let name of ['type', 'text', 'comment', 'color', 'pageLabel', 'sortIndex', 
 				case 'text':
 					if (this._getLatestField('annotationType') != 'highlight') {
 						throw new Error("'annotationText' can only be set for highlight annotations");
+					}
+					break;
+				
+				case 'color':
+					// Require 6-char hex value
+					if (!value.match(/#[a-f0-9]{6}/)) {
+						let e = new Error(`Invalid annotation color '${value}'`);
+						e.name = "ZoteroInvalidDataError";
+						throw e;
 					}
 					break;
 				
@@ -3938,6 +3955,7 @@ Zotero.Item.prototype.setTags = function (tags) {
  *
  * @param {String} name
  * @param {Number} [type=0]
+ * @return {Boolean} - True if the tag was added; false if the item already had the tag
  */
 Zotero.Item.prototype.addTag = function (name, type) {
 	type = type ? parseInt(type) : 0;
@@ -4006,6 +4024,9 @@ Zotero.Item.prototype.replaceTag = function (oldTag, newTag) {
  * Remove a tag from the item
  *
  * A separate save() is required to update the database.
+ *
+ * @param {String} tagName
+ * @return {Boolean} - True if the tag was removed; false if the item didn't have the tag
  */
 Zotero.Item.prototype.removeTag = function(tagName) {
 	this._requireData('tags');
@@ -4013,9 +4034,10 @@ Zotero.Item.prototype.removeTag = function(tagName) {
 	var newTags = oldTags.filter(tagData => tagData.tag !== tagName);
 	if (newTags.length == oldTags.length) {
 		Zotero.debug('Cannot remove missing tag ' + tagName + ' from item ' + this.libraryKey);
-		return;
+		return false;
 	}
 	this.setTags(newTags);
+	return true;
 }
 
 
@@ -4458,7 +4480,7 @@ Zotero.Item.prototype.multiDiff = function (otherItems, ignoreFields) {
  * @param {Number} [libraryID] - libraryID of the new item, or the same as original if omitted
  * @param {Boolean} [options.skipTags=false] - Skip tags
  * @param {Boolean} [options.includeCollections=false] - Add new item to all collections
- * @return {Promise<Zotero.Item>}
+ * @return {Zotero.Item}
  */
 Zotero.Item.prototype.clone = function (libraryID, options = {}) {
 	Zotero.debug('Cloning item ' + this.id);

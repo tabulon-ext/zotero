@@ -53,7 +53,7 @@ Zotero.File = new function(){
 		catch (e) {
 			Zotero.logError(e);
 		}
-		throw new Error("Unexpected value '" + pathOrFile + "'");
+		throw new Error("Unexpected path value '" + pathOrFile + "'");
 	}
 	
 	
@@ -448,14 +448,34 @@ Zotero.File = new function(){
 	
 	
 	this.download = Zotero.Promise.coroutine(function* (uri, path) {
-		Zotero.debug("Saving " + (uri.spec ? uri.spec : uri)
-			+ " to " + (path.pathQueryRef ? path.pathQueryRef : path));
+		var uriStr = uri.spec || uri;
+		
+		Zotero.debug(`Saving ${uriStr} to ${path.pathQueryRef || path}`);
+		
+		if (Zotero.HTTP.browserIsOffline()) {
+			let msg = `Download failed: ${Zotero.appName} is currently offline`;
+			Zotero.debug(msg, 2);
+			throw new Error(msg);
+		}
 		
 		var deferred = Zotero.Promise.defer();
 		NetUtil.asyncFetch(uri, function (is, status, request) {
 			if (!Components.isSuccessCode(status)) {
 				Zotero.logError(status);
-				deferred.reject(new Error("Download failed with status " + status));
+				let msg = Zotero.getString('sync.error.checkConnection');
+				switch (status) {
+					case 2152398878:
+						// TODO: Localize
+						msg = "Server not found. Check your internet connection."
+						break;
+				}
+				deferred.reject(new Error(msg));
+				return;
+			}
+			if (request.responseStatus != 200) {
+				let msg = `Download failed with response code ${request.responseStatus}`;
+				Zotero.logError(msg);
+				deferred.reject(new Error(msg));
 				return;
 			}
 			deferred.resolve(is);
@@ -1202,35 +1222,60 @@ Zotero.File = new function(){
 	}
 	
 	/**
-	 * Truncate a filename (excluding the extension) to the given total length
-	 * If the "extension" is longer than 20 characters,
-	 * it is treated as part of the file name
+	 * Truncate a filename (excluding the extension) to the given byte length
+	 *
+	 * If the extension is longer than 20 characters, it's treated as part of the file name.
+	 *
+	 * @param {String} fileName
+	 * @param {Number} maxLength - Maximum length in bytes
 	 */
 	function truncateFileName(fileName, maxLength) {
-		if(!fileName || (fileName + '').length <= maxLength) return fileName;
+		if (!fileName || Zotero.Utilities.Internal.byteLength((fileName + '')).length <= maxLength) {
+			return fileName;
+		}
 
-		var parts = (fileName + '').split(/\.(?=[^\.]+$)/);
-		var fn = parts[0];
+		var parts = (fileName + '').split(/\.(?=[^.]+$)/);
+		var name = parts[0];
 		var ext = parts[1];
 		//if the file starts with a period , use the whole file
 		//the whole file name might also just be a period
-		if(!fn) {
-			fn = '.' + (ext || '');
+		if (!name) {
+			name = '.' + (ext || '');
 		}
 
 		//treat long extensions as part of the file name
-		if(ext && ext.length > 20) {
-			fn += '.' + ext;
+		if (ext && ext.length > 20) {
+			name += '.' + ext;
 			ext = undefined;
 		}
-
-		if(ext === undefined) {	//there was no period in the whole file name
+		
+		// No period in the whole filename
+		if (ext === undefined) {
 			ext = '';
-		} else {
+		}
+		else {
 			ext = '.' + ext;
 		}
 
-		return fn.substr(0,maxLength-ext.length) + ext;
+		// Drop extension if it wouldn't fit within the limit
+		// E.g., for (lorem.json, 5), return "lorem" instead of ".json"
+		if (Zotero.Utilities.Internal.byteLength(ext) >= maxLength) {
+			ext = '';
+		}
+		
+		while (Zotero.Utilities.Internal.byteLength(name + ext) > maxLength) {
+			// Split into characters, so we don't corrupt emoji characters (though we might
+			// change multi-part emoji in unfortunate ways by removing some of the characters)
+			let parts = [...name];
+			name = name.substring(0, name.length - parts[parts.length - 1].length);
+		}
+		
+		// If removed completely, use underscore
+		if (name == '') {
+			name = '_';
+		}
+		
+		return name + ext;
 	}
 	
 	/*

@@ -119,6 +119,12 @@ Zotero.DBConnection = function(dbNameOrPath) {
 // Public methods
 //
 /////////////////////////////////////////////////////////////////
+Zotero.defineProperty(Zotero.DBConnection.prototype, 'path', {
+	get: function () {
+		return this._dbPath;
+	}
+});
+
 
 /**
  * Test a read-only connection to the database, throwing any errors that occur
@@ -859,7 +865,7 @@ Zotero.DBConnection.prototype.executeSQLFile = async function (sql) {
 	var statements = this.parseSQLFile(sql);
 	var statement;
 	while (statement = statements.shift()) {
-		await this.queryAsync(statement);
+		await this.queryAsync(statement, false, { noCache: true });
 	}
 };
 

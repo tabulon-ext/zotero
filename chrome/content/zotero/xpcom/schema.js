@@ -331,7 +331,7 @@ Zotero.Schema = new function(){
 						}, 250);
 					}
 				}
-			}.bind(this), 1000);
+			}.bind(this), Zotero.isStandalone ? 1000 : 0);
 		});
 		
 		return updated;
@@ -2214,7 +2214,6 @@ Zotero.Schema = new function(){
 			yield _getSchemaSQLVersion('triggers').then(function (version) {
 				return _updateDBVersion('triggers', version);
 			});
-			yield _updateDBVersion('compatibility', _maxCompatibility);
 			
 			var sql = "INSERT INTO libraries (libraryID, type, editable, filesEditable) "
 				+ "VALUES "
@@ -2222,6 +2221,7 @@ Zotero.Schema = new function(){
 			yield Zotero.DB.queryAsync(sql, userLibraryID);
 			
 			yield _updateLastClientVersion();
+			yield _updateCompatibility(_maxCompatibility);
 			
 			self.dbInitialized = true;
 		})
@@ -3266,6 +3266,18 @@ Zotero.Schema = new function(){
 					yield Zotero.DB.queryAsync("REPLACE INTO syncDeleteLog (syncObjectTypeID, libraryID, key) VALUES (?, ?, ?)", [syncObjectTypeID, row.libraryID, row.key]);
 				}
 				yield Zotero.DB.queryAsync("DELETE FROM items WHERE itemTypeID=? AND itemID NOT IN (SELECT itemID FROM itemAnnotations)", annotationID);
+			}
+			
+			else if (i == 114) {
+				yield Zotero.DB.queryAsync("UPDATE itemAnnotations SET color='#ffff00' WHERE color='#ffff0'");
+			}
+			
+			else if (i == 115) {
+				yield Zotero.DB.queryAsync("DELETE FROM settings WHERE setting='quickCopySite' AND key=?", [""]);
+			}
+			
+			else if (i == 116) {
+				yield Zotero.DB.queryAsync("UPDATE itemAnnotations SET color='#000000' WHERE color='#000'");
 			}
 			
 			// If breaking compatibility or doing anything dangerous, clear minorUpdateFrom

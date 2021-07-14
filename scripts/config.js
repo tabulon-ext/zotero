@@ -50,7 +50,10 @@ const symlinkFiles = [
 	'resource/ace/theme-chrome.js',
 	'resource/ace/theme-monokai.js',
 	'resource/ace/worker-javascript.js',
-	'update.rdf'
+	// Feed *.idl files are for documentation only
+	'!resource/feeds/*.idl',
+	'update.rdf',
+	'!chrome/skin/default/zotero/**/*.scss'
 ];
 
 
@@ -89,7 +92,6 @@ const browserifyConfigs = [
 // exclude mask used for js, copy, symlink and sass tasks
 const ignoreMask = [
 	'**/#*',
-	'**/_*.scss',
 	'resource/schema/global/schema.json.gz'
 ];
 

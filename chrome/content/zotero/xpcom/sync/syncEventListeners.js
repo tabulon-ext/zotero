@@ -100,7 +100,6 @@ Zotero.Sync.EventListeners.ChangeListener = new function () {
 
 Zotero.Sync.EventListeners.AutoSyncListener = {
 	_editTimeout: 3,
-	_noteEditTimeout: 15,
 	_observerID: null,
 	
 	init: function () {
@@ -132,6 +131,19 @@ Zotero.Sync.EventListeners.AutoSyncListener = {
 			return;
 		}
 		
+		var autoSyncDelay = 0;
+		if (extraData) {
+			// Some events (e.g., writes from the server) skip auto-syncing altogether
+			if (extraData.skipAutoSync) {
+				return;
+			}
+			
+			// Use a different timeout if specified (e.g., for note editing)
+			if (extraData.autoSyncDelay) {
+				autoSyncDelay = extraData.autoSyncDelay;
+			}
+		}
+		
 		// Determine affected libraries so only those can be synced
 		let libraries = [];
 		var fileLibraries = new Set();
@@ -150,9 +162,17 @@ Zotero.Sync.EventListeners.AutoSyncListener = {
 		else if (Zotero.DataObjectUtilities.getTypes().includes(type)) {
 			let objectsClass = Zotero.DataObjectUtilities.getObjectsClassForObjectType(type);
 			ids.forEach(id => {
+				let libraryID;
 				let lk = objectsClass.getLibraryAndKeyFromID(id);
 				if (lk) {
-					let library = Zotero.Libraries.get(lk.libraryID);
+					libraryID = lk.libraryID;
+				}
+				// On object deletion, libraryID should be in extraData
+				else if (extraData && extraData[id] && extraData[id].libraryID) {
+					libraryID = extraData[id].libraryID;
+				}
+				if (libraryID) {
+					let library = Zotero.Libraries.get(libraryID);
 					if (library.syncable) {
 						libraries.push(library);
 					}
@@ -168,13 +188,9 @@ Zotero.Sync.EventListeners.AutoSyncListener = {
 			return;
 		}
 		
-		var noteEdit = false;
-		if (type == 'item' && (event == 'add' || event == 'modify' || event == 'index')) {
-			// Use a longer timeout for a single note edit, to avoid repeating syncing during typing
-			if (ids.length == 1 && (Zotero.Items.get(ids[0]) || {}).itemType == 'note') {
-				noteEdit = true;
-			}
-			else {
+		if (type == 'item') {
+			// Check whether file syncing or full-text syncing are necessary
+			if (event == 'add' || event == 'modify' || event == 'index') {
 				for (let id of ids) {
 					let item = Zotero.Items.get(id);
 					if (!item) continue;
@@ -189,10 +205,10 @@ Zotero.Sync.EventListeners.AutoSyncListener = {
 		}
 		
 		Zotero.Sync.Runner.setSyncTimeout(
-			noteEdit ? this._noteEditTimeout : this._editTimeout,
+			autoSyncDelay || this._editTimeout,
 			false,
 			{
-				libraries: libraries.map(library => library.libraryID),
+				libraries: [...new Set(libraries.map(library => library.libraryID))],
 				fileLibraries: [...fileLibraries],
 				fullTextLibraries: [...fullTextLibraries]
 			}

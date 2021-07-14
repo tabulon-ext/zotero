@@ -623,10 +623,11 @@ async function resetDB(options = {}) {
 	}
 	var db = Zotero.DataDirectory.getDatabase();
 	await Zotero.reinit(
-		Zotero.Promise.coroutine(function* () {
-			yield OS.File.remove(db);
+		async function () {
+			// Swap in the initial copy we made of the DB
+			await OS.File.copy(db + '-test-template', db);
 			_defaultGroup = null;
-		}),
+		},
 		false,
 		options
 	);
@@ -942,7 +943,12 @@ async function createAnnotation(type, parentItem, options = {}) {
 	if (type == 'highlight') {
 		annotation.annotationText = Zotero.Utilities.randomString();
 	}
-	annotation.annotationComment = Zotero.Utilities.randomString();
+	if (options.comment !== undefined) {
+		annotation.annotationComment = options.comment;
+	}
+	else {
+		annotation.annotationComment = Zotero.Utilities.randomString();
+	}
 	annotation.annotationColor = '#ffd400';
 	var page = Zotero.Utilities.rand(1, 100);
 	annotation.annotationPageLabel = `${page}`;
